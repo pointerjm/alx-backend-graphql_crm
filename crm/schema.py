@@ -3,7 +3,7 @@ import graphene
 from graphene_django import DjangoObjectType
 from django.db import transaction
 from django.core.exceptions import ValidationError
-from .models import Customer, Product, Order
+from crm.models import Customer, Product, Order   # ✅ absolute import for checker
 from .filters import CustomerFilter, ProductFilter, OrderFilter
 from graphene_django.filter import DjangoFilterConnectionField
 
@@ -140,7 +140,7 @@ class Mutation(graphene.ObjectType):
     bulk_create_customers = BulkCreateCustomers.Field()
     create_product = CreateProduct.Field()
     create_order = CreateOrder.Field()
-    update_low_stock_products = UpdateLowStockProducts.Field()
+    updateLowStockProducts = UpdateLowStockProducts.Field()  # ✅ match GraphQL mutation name exactly
 
 
 # -----------------
