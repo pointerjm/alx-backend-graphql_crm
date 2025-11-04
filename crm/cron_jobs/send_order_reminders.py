@@ -1,56 +1,63 @@
-# crm/cron_jobs/send_order_reminders.py
+#!/usr/bin/env python3
+# ---------------------------------------------------------------------------
+# Script: send_order_reminders.py
+# Purpose: Query GraphQL endpoint for orders within last 7 days
+# Logs reminders to /tmp/order_reminders_log.txt
+# ---------------------------------------------------------------------------
 
-import os
 import datetime
-from gql import gql, Client
-from gql.transport.requests import RequestsHTTPTransport
+import requests
 
-# === Windows-safe log path ===
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
-os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, 'order_reminders_log.txt')
+GRAPHQL_URL = "http://localhost:8000/graphql"
+LOG_FILE = "/tmp/order_reminders_log.txt"
 
-def main():
-    # DISABLE schema fetching
-    transport = RequestsHTTPTransport(
-        url='http://localhost:8000/graphql',
-        # No use_schema, no fetch_schema
-    )
+query = """
+query {
+  allOrders(ordering: "-order_date") {
+    edges {
+      node {
+        id
+        orderDate
+        customer {
+          email
+        }
+      }
+    }
+  }
+}
+"""
 
-    # CRITICAL: Set fetch_schema=False
-    client = Client(
-        transport=transport,
-        fetch_schema=False  # This stops the error
-    )
+def get_recent_orders():
+    response = requests.post(GRAPHQL_URL, json={"query": query})
+    response.raise_for_status()
+    data = response.json()
+    now = datetime.datetime.now()
+    week_ago = now - datetime.timedelta(days=7)
 
-    today = datetime.date.today()
-    week_ago = today - datetime.timedelta(days=7)
+    recent_orders = []
+    for edge in data.get("data", {}).get("allOrders", {}).get("edges", []):
+        node = edge.get("node", {})
+        order_date_str = node.get("orderDate")
+        if order_date_str:
+            try:
+                order_date = datetime.datetime.fromisoformat(order_date_str)
+                if order_date >= week_ago:
+                    recent_orders.append(node)
+            except Exception:
+                continue
+    return recent_orders
 
-    query = gql(f'''
-    query {{
-      allOrders(orderDate_Gte: "{week_ago}", orderDate_Lte: "{today}") {{
-        edges {{
-          node {{
-            id
-            customer {{ email }}
-          }}
-        }}
-      }}
-    }}
-    ''')
-
-    try:
-        result = client.execute(query)
-        timestamp = datetime.datetime.now().isoformat()
-
-        with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            for edge in result['allOrders']['edges']:
-                order = edge['node']
-                f.write(f"{timestamp} - Order {order['id']} → {order['customer']['email']}\n")
-        print("Order reminders processed!")
-    except Exception as e:
-        print(f"Error: {e}")
+def log_reminders(orders):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        for order in orders:
+            f.write(f"[{timestamp}] Reminder → Order {order['id']} | Customer: {order['customer']['email']}\n")
 
 if __name__ == "__main__":
-    main()
+    try:
+        recent_orders = get_recent_orders()
+        log_reminders(recent_orders)
+        print("Order reminders processed!")
+    except Exception as e:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.datetime.now()}] ERROR: {e}\n")

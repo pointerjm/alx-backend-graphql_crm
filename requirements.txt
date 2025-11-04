@@ -1,5 +1,6 @@
-Django>=4.0
-graphene-django
+Django>=4.2
+graphene-django>=3.0
 django-filter
-gql[requests]
-apscheduler
+gql
+requests
+django-crontab
